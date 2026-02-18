@@ -1,0 +1,451 @@
+# GenAI Backend Engineering & RAG – Comprehensive Knowledge Base
+
+## 1. What This Document Is
+
+This document is a **dense, RAG‑ready knowledge source** designed to be chunked, embedded, and queried by an LLM. It intentionally avoids fluff and focuses on **concepts, architecture, trade‑offs, patterns, and real‑world reasoning** relevant to:
+
+* Backend engineering
+* GenAI systems
+* RAG (Retrieval‑Augmented Generation)
+* Production deployment
+* Interview‑level depth
+
+Use cases:
+
+* Feed into a vector database (FAISS, Pinecone, Weaviate, Qdrant)
+* Internal company knowledge base
+* Interview prep assistant
+* Architecture decision helper
+
+---
+
+## 2. Core Backend Engineering Concepts (Production Perspective)
+
+### 2.1 ASGI vs WSGI
+
+* **WSGI** is synchronous and blocks threads per request.
+* **ASGI** supports async I/O, WebSockets, background tasks.
+* FastAPI uses ASGI, enabling high‑throughput LLM calls and streaming responses.
+
+Why this matters for GenAI:
+
+* LLM APIs are network‑bound → async saves cost and latency
+* Streaming tokens requires ASGI
+
+---
+
+### 2.2 Async Programming (Python)
+
+* Async ≠ faster CPU, it means **better concurrency for I/O**
+* Key primitives:
+
+  * `async def`
+  * `await`
+  * event loop
+* Never mix blocking calls (requests, boto3) in async paths
+
+Anti‑pattern:
+
+* Async endpoint calling blocking DB/HTTP client
+
+Correct pattern:
+
+* Use async clients (httpx, aiobotocore, asyncpg)
+
+---
+
+### 2.3 API Design Principles
+
+Good APIs:
+
+* Are predictable
+* Fail loudly
+* Versioned
+
+Key rules:
+
+* `/v1/` versioning
+* Consistent response schema
+* Explicit error codes
+
+Bad APIs:
+
+* Return 200 with error messages
+* Change response shape silently
+
+---
+
+### 2.4 Input Validation & Schemas
+
+* Always validate at boundaries
+* Pydantic ensures:
+
+  * Type safety
+  * Auto docs
+  * Early failure
+
+Why critical in AI systems:
+
+* Garbage input → hallucinated output
+* Validation is cheaper than LLM calls
+
+---
+
+### 2.5 Error Handling Strategy
+
+Levels:
+
+* Client errors (400–422)
+* Auth errors (401–403)
+* Server errors (500)
+
+LLM‑specific errors:
+
+* Timeout
+* Rate limit
+* Token overflow
+
+Rule:
+
+> Never expose raw LLM or cloud errors to users
+
+---
+
+## 3. System Design Foundations
+
+### 3.1 Stateless Services
+
+* Backend services should be stateless
+* State goes to:
+
+  * DB
+  * Cache
+  * Object storage
+
+Why:
+
+* Horizontal scaling
+* Easier failure recovery
+
+---
+
+### 3.2 Caching
+
+Where cache helps GenAI:
+
+* Prompt templates
+* Tool schemas
+* Frequent queries
+
+Cache layers:
+
+* In‑memory (LRU)
+* Redis
+
+Rule:
+
+* Cache deterministic outputs
+* Never cache user‑specific sensitive data blindly
+
+---
+
+### 3.3 Background Jobs
+
+Why background jobs are mandatory:
+
+* LLM calls are slow
+* Embedding large docs is expensive
+
+Tools:
+
+* SQS
+* Celery
+* Redis queues
+
+Pattern:
+
+1. API triggers job
+2. Job runs async
+3. Status endpoint polls result
+
+---
+
+## 4. Large Language Models (LLMs)
+
+### 4.1 What an LLM Actually Is
+
+* Next‑token predictor
+* No memory
+* No reasoning by default
+
+Everything else is **engineering illusion** built on top
+
+---
+
+### 4.2 Prompt Engineering (Reality Check)
+
+What matters:
+
+* Clear instructions
+* Output constraints
+* Examples
+
+What doesn’t:
+
+* Fancy wording
+* Over‑prompting
+
+Rule:
+
+> If your system depends on prompt magic, it will break
+
+---
+
+### 4.3 Tokens, Context Windows, Cost
+
+Problems:
+
+* Long context = expensive
+* Long context ≠ better answers
+
+Solution:
+
+* Use RAG
+* Use summarization
+
+---
+
+## 5. Embeddings & Vector Databases
+
+### 5.1 What Embeddings Are
+
+* Numerical representations of meaning
+* Similar text → closer vectors
+
+Used for:
+
+* Search
+* Clustering
+* Retrieval
+
+---
+
+### 5.2 Chunking Strategy
+
+Bad chunking:
+
+* Arbitrary size
+* No semantic boundary
+
+Good chunking:
+
+* 300–800 tokens
+* Semantic units
+* Overlap (10–20%)
+
+Chunking decides RAG quality more than the model
+
+---
+
+### 5.3 Vector Indexes
+
+Common types:
+
+* Flat (exact, slow)
+* IVF
+* HNSW (most popular)
+
+Trade‑off:
+
+* Accuracy vs speed
+
+---
+
+## 6. RAG (Retrieval‑Augmented Generation)
+
+### 6.1 Why RAG Exists
+
+LLMs fail at:
+
+* Factual accuracy
+* Domain specificity
+* Fresh data
+
+RAG solves:
+
+* Hallucination
+* Knowledge cut‑off
+* Domain grounding
+
+---
+
+### 6.2 RAG Architecture (Standard)
+
+1. User query
+2. Query embedding
+3. Vector search
+4. Top‑K retrieval
+5. Context injection
+6. LLM generation
+
+---
+
+### 6.3 When RAG Is Useless
+
+Do NOT use RAG if:
+
+* Question is generic
+* Answer is reasoning‑only
+* Data is tiny and static
+
+RAG is not a default choice
+
+---
+
+### 6.4 RAG Failure Modes
+
+Common failures:
+
+* Bad chunking
+* Too much context
+* Irrelevant retrieval
+* Prompt leakage
+
+Fix:
+
+* Reranking
+* Metadata filters
+* Smaller context
+
+---
+
+## 7. Agentic Systems
+
+### 7.1 What an Agent Really Is
+
+An agent is:
+
+* LLM + tools + loop
+
+Not magic
+Not autonomous intelligence
+
+---
+
+### 7.2 Tool Calling
+
+Tools:
+
+* APIs
+* DB queries
+* File systems
+
+Rule:
+
+* Tools must be deterministic
+* Validate inputs before execution
+
+---
+
+### 7.3 When Agents Fail
+
+* Infinite loops
+* Tool misuse
+* Cost explosion
+
+Mitigation:
+
+* Step limits
+* Budget limits
+* Explicit plans
+
+---
+
+## 8. Security in GenAI Backends
+
+### 8.1 Prompt Injection
+
+Types:
+
+* Direct
+* Indirect (via documents)
+
+Defense:
+
+* System prompts
+* Input sanitization
+* Output validation
+
+---
+
+### 8.2 Data Privacy
+
+Rules:
+
+* Never log raw prompts
+* Mask PII
+* Encrypt stored embeddings
+
+---
+
+## 9. Observability & Monitoring
+
+Metrics to track:
+
+* Latency per LLM call
+* Token usage
+* Cost per request
+* Error rates
+
+Logs:
+
+* Request IDs
+* Trace IDs
+
+Without observability, GenAI systems are blind
+
+---
+
+## 10. Cost Engineering
+
+LLMs are expensive by default
+
+Cost reduction strategies:
+
+* Cache embeddings
+* Reduce context size
+* Use smaller models
+* Batch requests
+
+Rule:
+
+> If you don’t track cost, you will exceed budget
+
+---
+
+## 11. Interview‑Level Mental Models
+
+### 11.1 How to Explain RAG Simply
+
+> RAG is search + generation, not memory
+
+### 11.2 How to Explain Agents
+
+> Agents are controlled loops around LLMs with tools
+
+### 11.3 How to Stand Out
+
+* Talk about failure modes
+* Talk about trade‑offs
+* Talk about cost
+
+---
+
+## 12. Final Truths
+
+* LLMs are not intelligent
+* Engineering matters more than models
+* RAG quality depends on data, not prompts
+* Most GenAI failures are backend failures
+
+If you master backend + GenAI, you are future‑proof.
